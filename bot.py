@@ -16,10 +16,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 TOKEN = os.environ.get("BOT_TOKEN")
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
+PORT = int(os.environ.get("PORT", 10000))
 
-# ─────────────────────────────────────────────
-#  CINEMATIC STYLES
-# ─────────────────────────────────────────────
 STYLES = {
     "epic": {
         "label": "⚡ Epic Blockbuster",
@@ -87,9 +86,6 @@ STYLES = {
     },
 }
 
-# ─────────────────────────────────────────────
-#  HELPERS
-# ─────────────────────────────────────────────
 def style_keyboard():
     buttons = []
     items = list(STYLES.items())
@@ -110,9 +106,6 @@ def build_image_url(prompt: str, style_key: str = "epic") -> str:
         f"?width=1920&height=1080&model=flux&seed={seed}&nologo=true&enhance=true"
     )
 
-# ─────────────────────────────────────────────
-#  COMMANDS
-# ─────────────────────────────────────────────
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user.first_name or "Creator"
     text = (
@@ -140,7 +133,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(text)
 
-
 async def style_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         "🎨  CHOOSE YOUR CINEMATIC STYLE\n"
@@ -151,7 +143,6 @@ async def style_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "👇  Tap to select:"
     )
     await update.message.reply_text(text, reply_markup=style_keyboard())
-
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
@@ -169,15 +160,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "✔  Add emotions (lonely, triumphant, peaceful)\n"
         "✔  Include environment details\n\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        "EXAMPLE (Detailed):\n"
-        '"A lone detective standing under a flickering\n'
-        ' streetlamp on a rainy cobblestone street,\n'
-        ' cigarette smoke curling into the cold air"\n\n'
-        "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         "The more detail you give → the better the image ✨"
     )
     await update.message.reply_text(text)
-
 
 async def current_style(update: Update, context: ContextTypes.DEFAULT_TYPE):
     style_key = context.user_data.get("style", "epic")
@@ -190,10 +175,6 @@ async def current_style(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(text)
 
-
-# ─────────────────────────────────────────────
-#  CALLBACK — Style selection
-# ─────────────────────────────────────────────
 async def style_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -211,10 +192,6 @@ async def style_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await query.edit_message_text(text)
 
-
-# ─────────────────────────────────────────────
-#  MESSAGE — Generate image
-# ─────────────────────────────────────────────
 async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_prompt = update.message.text.strip()
     style_key = context.user_data.get("style", "epic")
@@ -248,37 +225,16 @@ async def generate_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 caption=caption
             )
         else:
-            await update.message.reply_text(
-                "❌  GENERATION FAILED\n"
-                "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                "The AI server returned an error.\n"
-                "Please try again with a different description."
-            )
-    except requests.exceptions.Timeout:
-        await update.message.reply_text(
-            "⏱️  REQUEST TIMED OUT\n"
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-            "The server is busy right now.\n"
-            "Please wait 10 seconds and try again."
-        )
+            await update.message.reply_text("❌ Generation failed. Please try again.")
     except Exception as e:
-        logger.error(f"Image generation error: {e}")
-        await update.message.reply_text(
-            "⚠️  UNEXPECTED ERROR\n"
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-            "Something went wrong on our end.\n"
-            "Please try again shortly."
-        )
+        logger.error(f"Error: {e}")
+        await update.message.reply_text("⚠️ Something went wrong. Please try again.")
     finally:
         try:
             await loading_msg.delete()
         except Exception:
             pass
 
-
-# ─────────────────────────────────────────────
-#  MAIN
-# ─────────────────────────────────────────────
 def main():
     app = Application.builder().token(TOKEN).build()
 
@@ -289,10 +245,17 @@ def main():
     app.add_handler(CallbackQueryHandler(style_callback, pattern="^style_"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, generate_image))
 
-    logger.info("✦ Cinematic AI Bot is running...")
-    app.run_polling(drop_pending_updates=True)
-
+    if WEBHOOK_URL:
+        logger.info("✦ Starting with WEBHOOK mode...")
+        app.run_webhook(
+            listen="0.0.0.0",
+            port=PORT,
+            webhook_url=f"{WEBHOOK_URL}/{TOKEN}",
+            url_path=TOKEN,
+        )
+    else:
+        logger.info("✦ Starting with POLLING mode...")
+        app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     main()
-  
